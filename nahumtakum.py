@@ -1,4 +1,4 @@
-from machine import I2C, Pin
+from machine import I2C, Pin, PWM
 from mpu6050 import MPU6050  # Assuming the MPU6050 module is named mpu6050.py
 from time import sleep_ms, ticks_ms, ticks_diff
 
@@ -11,10 +11,12 @@ class NahumTakum:
         self._ena = ena
 
         # Setup motor pins
-        Pin(self._in1, Pin.OUT)
-        Pin(self._in2, Pin.OUT)
         self.ena_pwm = Pin(self._ena, Pin.OUT)
-
+        self.PWM_in1 = PWM(Pin(self._in1))
+        self.PWM_in1.freq(1000)  # Set frequency to 1kHz
+        self.PWM_in2 = PWM(Pin(self._in2))
+        self.PWM_in2.freq(1000)  # Set frequency to 1kHz
+        
         # Initialize MPU6050
         if i2c_instance is None:
             raise ValueError("I2C instance is required for MPU6050 initialization.")
@@ -44,36 +46,11 @@ class NahumTakum:
 
     def run(self):
         # Update MPU6050 readings
-        self.mpu.update()
-        if self.debug:
-            print(f"Pitch: {self.get_pitch()}")
-
-    def get_pitch(self):
-        # Get the pitch (Y-axis angle)
-        #print(self.mpu.accel.xyz)
-        #print(self.mpu.gyro.xyz)
-        #print(self.mpu.mag.xyz)
+        self.mpu.update_angle()
         
-        #print(self.mpu.accel.z)
-        
-        # Read angular velocity (degrees per second or radians per second)
-        gyro_z = self.mpu.gyro.z
-        accel_angle = self.mpu.accel.y  # Compute pitch from accelerometer
-
-        alpha = 0.98  # Tuning parameter
-        # Calculate time elapsed in seconds
-        current_time = ticks_ms()
-        elapsed_time = ticks_diff(current_time, self.last_time) / 1000.0  # Convert ms to seconds
-        self.last_time = current_time
-
-        # Integrate to find the angle
-        self.current_angle += gyro_z * elapsed_time
-        self.current_angle = alpha * (self.current_angle + gyro_z * elapsed_time) + (1 - alpha) * accel_angle
-
-        # Optional: Limit the angle to a specific range (e.g., -180 to 180 degrees)
-        self.current_angle = (self.current_angle + 180) % 360 - 180  # Wrap angle to [-180, 180]
-
-        return self.current_angle
+    def ang(self):
+        return(self.mpu.update_angle())
+    
 
     def pid_calc(self, sp, pv):
         # PID calculation logic
@@ -94,7 +71,7 @@ class NahumTakum:
         self.previous_time = self.current_time
 
         # Clamp the output
-        output = max(min(output, 254), -254)
+        output = max(min(output, 100), -100)
         return output
 
     def tumble(self, kp, ki, kd):
@@ -103,16 +80,24 @@ class NahumTakum:
         self._ki = ki
         self._kd = kd
 
-        pitch = self.get_pitch()
+        pitch = self.ang()
         inp = self.pid_calc(0, pitch)
+        speed = int(inp) #this is the speed value
+        print('speed =', speed)
+        self.motgo(speed)
 
-        if inp < 0:
-            Pin(self._in1).on()
-            Pin(self._in2).off()
+    def motgo(self, speed):
+        pwm_value = int(min(max(abs(speed), 0), 100) * 10.23)  # Map 0 to 100 to 0 to 1023
+        if speed > 0:
+            # Forward direction
+            self.PWM_in1.duty(pwm_value)
+            self.PWM_in2.duty(0)
+        elif speed < 0:
+            # Reverse direction
+            self.PWM_in1.duty(0)
+            self.PWM_in2.duty(pwm_value)
         else:
-            Pin(self._in1).off()
-            Pin(self._in2).on()
-
-        pwm_value = int(abs(inp))
-        self.ena_pwm.duty_u16(pwm_value)
+            # Stop the motor
+            self.PWM_in1.duty(0)
+            self.PWM_in2.duty(0)    
 
