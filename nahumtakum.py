@@ -1,22 +1,59 @@
-from machine import I2C, Pin, PWM
+from machine import I2C, Pin, PWM,SPI
 from mpu6050 import MPU6050  # Assuming the MPU6050 module is named mpu6050.py
-from time import sleep_ms, ticks_ms, ticks_diff
+from time import sleep_ms, ticks_ms, ticks_diff, sleep
+import motordriver
+import utime
+from ili9341 import Display, color565
+from xglcd_font import XglcdFont
+import sdcard
+import os
+import math
+from bmphandle import read_bmp_file, display_bmp, read_bmp_in_chunks
 
+# visualization settings
+espresso_dolce = XglcdFont('fonts/EspressoDolce18x24.c', 18, 24)
+arcade = XglcdFont('fonts/ArcadePix9x11.c', 9, 11)
 
+# Initialize SD card (optional, can be removed if not needed)
 class NahumTakum:
-    def __init__(self, in1, in2, ena, i2c_instance=None):
+    def __init__(self, in1, in2, ena, i2c_instance=None, encoder1_pin=None, encoder2_pin=None, wheel_size=None, display=None, font=None):
         # Motor control pins
         self._in1 = in1
         self._in2 = in2
         self._ena = ena
 
-        # Setup motor pins
-        self.ena_pwm = Pin(self._ena, Pin.OUT)
-        self.PWM_in1 = PWM(Pin(self._in1))
-        self.PWM_in1.freq(1000)  # Set frequency to 1kHz
-        self.PWM_in2 = PWM(Pin(self._in2))
-        self.PWM_in2.freq(1000)  # Set frequency to 1kHz
-        
+        # Encoder pins
+        self.encoder1_pin = encoder1_pin
+        self.encoder2_pin = encoder2_pin
+
+        # Additional attributes
+        self.wheel_size = wheel_size
+        self.i2c = i2c_instance  # Store the I²C instance for use in the class
+
+        # SPI and display setup
+        self.spi = SPI(1, baudrate=33000000, sck=Pin(18), mosi=Pin(23), miso=Pin(19))
+        self.dc = Pin(25)
+        self.cs = Pin(5)  # Screen CS
+        self.rst = Pin(33)
+        self.display = Display(self.spi, cs=self.cs, dc=self.dc, rst=self.rst, rotation=0, mirror=False)
+        self.display.clear()
+        self.sd_cs = Pin(15)
+
+        # Load fonts
+        self.arcade_font = XglcdFont('fonts/ArcadePix9x11.c', 9, 11)
+
+
+        # Initialize motor driver object
+        self.motor = motordriver.motordriver(
+            encoder1_pin=self.encoder1_pin,
+            encoder2_pin=self.encoder2_pin,
+            in1_pin=self._in1,
+            in2_pin=self._in2,
+            wheel_size=self.wheel_size,
+            display=self.display,
+            font=self.arcade_font,  # Use the internally loaded font
+        )
+                
         # Initialize MPU6050
         if i2c_instance is None:
             raise ValueError("I2C instance is required for MPU6050 initialization.")
@@ -37,12 +74,15 @@ class NahumTakum:
         self.debug = False
 
     def begin(self):
+        self.display.draw_text(40, 20, "NahumTakum!", espresso_dolce, color565(100, 255, 255))
+        self.display.draw_text(50, 100, "initializing...", espresso_dolce, color565(80, 255, 255))
+
         # Initialize MPU6050
         
         self.mpu.calibrate_gyro
         self.previous_time = ticks_ms()
         print("MPU6050 initialized.")
-
+        self.display.clear()
 
     def run(self):
         # Update MPU6050 readings
@@ -50,54 +90,56 @@ class NahumTakum:
         
     def ang(self):
         return(self.mpu.update_angle())
-    
-
-    def pid_calc(self, sp, pv):
-        # PID calculation logic
-        self.current_time = ticks_ms()
-        elapsed_time = ticks_diff(self.current_time, self.previous_time) / 1000.0
-
-        self.error = sp - pv
-        self.cum_error += self.error * elapsed_time
-        rate_error = (self.error - self.last_error) / elapsed_time
-
-        output = (
-            self._kp * self.error
-            + self._ki * self.cum_error
-            + self._kd * rate_error
-        )
-
-        self.last_error = self.error
-        self.previous_time = self.current_time
-
-        # Clamp the output
-        output = max(min(output, 100), -100)
-        return output
+    def stop(self):
+        self.motor.motgo(0)
+    def gotoang(self, deg):
+        self.motor.godegreesp(deg, 200, 0.3, 0.04, 0, color565(255, 255, 0), 0)
 
     def tumble(self, kp, ki, kd):
+        """
+        Performs motor control using PID, limited by safety boundaries.
+        """
         # Set PID constants
         self._kp = kp
         self._ki = ki
         self._kd = kd
 
-        pitch = self.ang()
-        inp = self.pid_calc(0, pitch)
-        speed = int(inp) #this is the speed value
-        print('speed =', speed)
-        self.motgo(speed)
+        # Read current motor angle
+        self.ang = self.motor.degrees  # this is updated via an IRQ
 
-    def motgo(self, speed):
-        pwm_value = int(min(max(abs(speed), 0), 100) * 10.23)  # Map 0 to 100 to 0 to 1023
-        if speed > 0:
-            # Forward direction
-            self.PWM_in1.duty(pwm_value)
-            self.PWM_in2.duty(0)
-        elif speed < 0:
-            # Reverse direction
-            self.PWM_in1.duty(0)
-            self.PWM_in2.duty(pwm_value)
+        if -110 < self.ang < 110:  # Safety measure
+            #print('In boundaries')
+
+            # Current angle as Process Value (PV)
+            pitch = self.ang  
+
+            # Calculate PID error and output
+            inp = self.motor.PIDcalc(
+                0,  # Target angle
+                pitch,
+                self._kp,
+                self._ki,
+                self._kd,
+                color565(0, 255, 0),  # Optional: Color for plotting PID response
+            )
+
+            # Limit the speed if necessary
+            speed = int(inp)
+            #print(f"Calculated speed: {speed}")
+
+            # Command motor to move at calculated speed
+            self.motor.motgo(speed)
+
+            # Optional: Log motor angle
+            #print(f"Current angle: {self.motor.degrees}")
+
+            return speed
         else:
-            # Stop the motor
-            self.PWM_in1.duty(0)
-            self.PWM_in2.duty(0)    
+            # Out of safety boundaries
+            print('Out of boundaries! Stopping motor.')
+
+            # Optional: Stop motor or take necessary safety measures
+            self.motor.motgo(0)
+            return 0
+
 
