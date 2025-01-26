@@ -76,9 +76,8 @@ class NahumTakum:
     def begin(self):
         self.display.draw_text(40, 20, "NahumTakum!", espresso_dolce, color565(100, 255, 255))
         self.display.draw_text(50, 100, "initializing...", espresso_dolce, color565(80, 255, 255))
-
+        self.stop()
         # Initialize MPU6050
-        
         self.mpu.calibrate_gyro
         self.previous_time = ticks_ms()
         print("MPU6050 initialized.")
@@ -92,10 +91,16 @@ class NahumTakum:
         return(self.mpu.update_angle())
     def stop(self):
         self.motor.motgo(0)
+    def motgo(self, speed):
+        self.motor.motgo(speed)    
     def gotoang(self, deg):
-        self.motor.godegreesp(deg, 200, 0.3, 0.04, 0, color565(255, 255, 0), 0)
-
-    def tumble(self, kp, ki, kd):
+        self.motor.godegreesp(deg, 480, 0.5, 0.4, 0, color565(255, 255, 0), 0)
+    def clearscreen(self):
+        self.display.clear()
+    def display_pid_values(self, kp, ki, kd, color, Line_index):
+        self.motor.display_pid_values(kp, ki, kd, color, Line_index)
+    
+    def tumble(self, kp, ki, kd, color):
         """
         Performs motor control using PID, limited by safety boundaries.
         """
@@ -107,7 +112,7 @@ class NahumTakum:
         # Read current motor angle
         self.ang = self.motor.degrees  # this is updated via an IRQ
 
-        if -110 < self.ang < 110:  # Safety measure
+        if -130 < self.ang < 130:  # Safety measure
             #print('In boundaries')
 
             # Current angle as Process Value (PV)
@@ -120,7 +125,8 @@ class NahumTakum:
                 self._kp,
                 self._ki,
                 self._kd,
-                color565(0, 255, 0),  # Optional: Color for plotting PID response
+                color,  #Color for plotting PID response
+                True, #plot flag
             )
 
             # Limit the speed if necessary
@@ -141,5 +147,26 @@ class NahumTakum:
             # Optional: Stop motor or take necessary safety measures
             self.motor.motgo(0)
             return 0
-
+    
+    def testtumble(self, kp, ki, kd, Line_index):
+        #Sort out the colors
+        if Line_index == 0:
+            color = color565(255, 255, 0)  # Yellow
+        elif Line_index == 1:
+            color = color565(30, 255, 30)  # Green
+        elif Line_index == 2:
+            color = color565(0, 255, 255)  # Cyan
+        elif Line_index == 3:
+            color = color565(255, 0, 255)  # Magenta
+        else:  # Default case
+            color = color565(255, 255, 255)  # White (fallback)
+        # Set PID constants
+        
+        
+        for _ in range(480):
+            self.run()
+            self.tumble(kp,ki,kd, color)
+        self.stop()
+        self.display_pid_values(kp, ki, kd, color, Line_index)
+       
 
