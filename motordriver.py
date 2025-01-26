@@ -66,7 +66,7 @@ class motordriver:
             self.in1.value(0)
             self.in2.value(0)  # Explicitly stop the motor  
     
-    def PIDcalc(self, inp, sp, kp, ki, kd, color):
+    def PIDcalc(self, inp, sp, kp, ki, kd, color, plotflag=False):
         current_time = time.ticks_ms()
         elapsed_time = (current_time - self.previous_time) / 1000.0
 
@@ -98,13 +98,13 @@ class motordriver:
 
         # Clamp output to motor limits
         out = max(-254, min(254, out))
-
-        # Increment the iteration counter for PID
-        self.iteration_counter += 1
-        if self.iteration_counter >= self.plot_step:
-            time.sleep(0.01)
-            self.plot_pid(out, color)
-            self.iteration_counter = 0  # Reset counter
+        if(plotflag):
+            # Increment the iteration counter for PID
+            self.iteration_counter += 1
+            if self.iteration_counter >= self.plot_step:
+                time.sleep(0.01)
+                self.plot_pid(out, color)
+                self.iteration_counter = 0  # Reset counter
 
         # Return PID output
         return out
@@ -182,8 +182,10 @@ class motordriver:
             motspeed = self.PIDcalc(angle, self.degrees, kp, ki, kd, color)
             motspeed = max(-254, min(254, motspeed))
             self.motgo(motspeed)
+            #if _%40:
+                #print(int(motspeed))
 
-        self.display_pid_values(kp, ki, kd, color, line_index)
+        #self.display_pid_values(kp, ki, kd, color, line_index)
         print('reached ', self.degrees, 'degrees')
         
         
