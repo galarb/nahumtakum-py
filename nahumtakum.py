@@ -13,7 +13,7 @@ from bmphandle import read_bmp_file, display_bmp, read_bmp_in_chunks
 # visualization settings
 espresso_dolce = XglcdFont('fonts/EspressoDolce18x24.c', 18, 24)
 arcade = XglcdFont('fonts/ArcadePix9x11.c', 9, 11)
-
+vals = []
 # Initialize SD card (optional, can be removed if not needed)
 class NahumTakum:
     def __init__(self, in1, in2, ena, i2c_instance=None, encoder1_pin=None, encoder2_pin=None, wheel_size=None, display=None, font=None):
@@ -76,7 +76,7 @@ class NahumTakum:
     def begin(self):
         self.display.draw_text(40, 20, "NahumTakum!", espresso_dolce, color565(100, 255, 255))
         self.display.draw_text(50, 100, "initializing...", espresso_dolce, color565(80, 255, 255))
-        self.stop()
+        self.stophard()
         # Initialize MPU6050
         self.mpu.calibrate_gyro
         self.previous_time = ticks_ms()
@@ -91,12 +91,24 @@ class NahumTakum:
         return(self.mpu.update_angle())
     def stop(self):
         self.motor.motgo(0)
+        print('reached ', self.motor.degrees)
     def motgo(self, speed):
-        self.motor.motgo(speed)    
+        self.motor.motgo(speed)
+    def stophard(self):
+        self.motor.stophard()
     def gotoang(self, deg):
-        self.motor.godegreesp(deg, 480, 0.5, 0.4, 0, color565(255, 255, 0), 0)
+        self.motor.godegreesp(deg, 200, 1, 0, 0, color565(255, 255, 0), 0)
+    def gotoangp(self, deg, times, kp, ki, kd):
+        self.motor.godegreesp(deg, times, kp, ki, kd, color565(255, 255, 0), 0)
+    def test(self, times):
+        self.motor.test(times)
     def clearscreen(self):
         self.display.clear()
+    def recorded_v(self):
+        vals =self.motor.recorded_v()
+        return vals
+    def motang(self):
+        return self.motor.motang()
     def display_pid_values(self, kp, ki, kd, color, Line_index):
         self.motor.display_pid_values(kp, ki, kd, color, Line_index)
     
@@ -163,10 +175,10 @@ class NahumTakum:
         # Set PID constants
         
         
-        for _ in range(480):
+        for _ in range(240):
             self.run()
             self.tumble(kp,ki,kd, color)
-        self.stop()
+        self.stophard()
         self.display_pid_values(kp, ki, kd, color, Line_index)
        
 
