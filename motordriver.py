@@ -4,7 +4,8 @@ import math
 from ili9341 import color565  # Import color565 for color handling
 from xglcd_font import XglcdFont
 import random
-
+recorded_values = []
+recorded_valuesproc = []
 
 class motordriver:
     def __init__(self, encoder1_pin, encoder2_pin, in1_pin, in2_pin, wheel_size, display, font):
@@ -26,7 +27,7 @@ class motordriver:
 
         self.last_error = 0
         self.cum_error = 0
-        self.previous_time = time.ticks_ms()
+        self.previous_time = time.ticks_us()
         self.integral_flag = False
         
         self.plot_step = 1  # Plot update step: Update plot every 'plot_step' iterations
@@ -35,7 +36,11 @@ class motordriver:
         self.iteration_counter = 0  # To control how often pixels are plotted
 
         self.graph_x = 0  # Start drawing from the leftmost pixel
-        
+        #stop the motor
+        self.pwm1.duty(0)
+        self.pwm2.duty(0)    
+        self.in1.value(0)
+        self.in2.value(0)
         
     def encoder1_irq_handler(self, pin):
         encoder1_state = self.encoder1.value()
@@ -63,16 +68,22 @@ class motordriver:
             # Stop the motor
             self.pwm1.duty(0)
             self.pwm2.duty(0)    
-            self.in1.value(0)
-            self.in2.value(0)  # Explicitly stop the motor  
+
     
+    def stophard(self):
+            self.pwm1.duty(1023)
+            self.pwm2.duty(1023)
+            
     def PIDcalc(self, inp, sp, kp, ki, kd, color, plotflag=False):
-        current_time = time.ticks_ms()
-        elapsed_time = (current_time - self.previous_time) / 1000.0
+        current_time = time.ticks_us()
+        elapsed_time = (current_time - self.previous_time) / 1000000.0
 
         # Ensure elapsed_time is positive to avoid division by zero
         if elapsed_time <= 0:
-            return 0
+            if self.last_error != 0:
+                return self.last_error
+            else:
+                return 0
 
         # Calculate error
         error = sp - inp
@@ -98,6 +109,9 @@ class motordriver:
 
         # Clamp output to motor limits
         out = max(-254, min(254, out))
+        #recorded_values.append(out)  # Record the value
+
+        
         if(plotflag):
             # Increment the iteration counter for PID
             self.iteration_counter += 1
@@ -122,8 +136,8 @@ class motordriver:
         screen_width = 240
 
         # Scale the error to fit the screen height
-        max_error = 254
-        min_error = -254
+        max_error = 120
+        min_error = -120
         y_position = int(((error - min_error) / (max_error - min_error)) * screen_height)
         y_position = max(0, min(screen_height - 1, screen_height - y_position))
 
@@ -175,20 +189,28 @@ class motordriver:
             motspeed = self.PIDcalc(angle, self.degrees, 1, 1, 0)
             motspeed = max(-254, min(254, motspeed))  # Clamp the speed to [-254, 254]
             self.motgo(motspeed)
-
     
-    def godegreesp(self, angle, times, kp, ki, kd, color, line_index):
+    def test(self,times):
+        for _ in range(times):
+            motspeed = self.PIDcalc(90, self.degrees, 1, 0, 0, color565(255, 255, 0))
+            #motspeed = max(-254, min(254, motspeed))
+            recorded_valuesproc.append(int(motspeed))
+        print("Recorded PIDcalc out:", recorded_values)
+        print("Recorded processed:", recorded_valuesproc)
+    
+    def godegreesp(self, angle, times, kp, ki, kd, color, line_index, plotflag=True):
         for _ in range(times):
             motspeed = self.PIDcalc(angle, self.degrees, kp, ki, kd, color)
             motspeed = max(-254, min(254, motspeed))
             self.motgo(motspeed)
-            #if _%40:
-                #print(int(motspeed))
-
+            recorded_valuesproc.append(int(motspeed))
+        self.stophard()
         #self.display_pid_values(kp, ki, kd, color, line_index)
-        print('reached ', self.degrees, 'degrees')
-        
-        
+        #print('reached ', self.degrees, 'degrees')
+        # Print all recorded values at the end
+        #print("Recorded processed:", recorded_valuesproc)
+    def recorded_v(self):
+        return recorded_valuesproc
         
     def gomm(self, distance, times):
         deg = (distance / (self.wheel_size * math.pi)) * 360
@@ -202,5 +224,7 @@ class motordriver:
         dist_covered = (self.degrees * self.wheel_size * math.pi) / 360.0
 
         return dist_covered
+    def motang(self):
+        return self.degrees
     
     
