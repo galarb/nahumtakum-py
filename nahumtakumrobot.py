@@ -20,21 +20,40 @@ robot = NahumTakum(
 # Initialize the MPU6050 and system
 robot.begin()
 
-#robot.motgo(-90)
-#time.sleep(2)
-#robot.stop()
-#robot.testtumble(kp,ki,kd,lineindex)
-robot.gotoang(-90)
+robot.gotoangp(-90, 500, 0.85, 0.1, 0)
+time.sleep(0.5)
 
-robot.testtumble(1, 2, 0, 1)
-time.sleep(2)
+robot.testtumble(1, 0, 0, 0)
+time.sleep(0.5)
 
-'''robot.gotoang(-90)
-robot.testtumble(2, 0, 0.1, 2)
-time.sleep(2)'''
-robot.stop()
+robot.gotoangp(-90, 500, 0.85, 0.1, 0)
+time.sleep(0.5)
 
+robot.testtumble(1.5, 1, 0, 1)
+time.sleep(0.5)
 
+robot.gotoangp(-90, 500, 0.85, 0.1, 0)
+time.sleep(0.5)
+
+robot.testtumble(1.1, 1.05, 0.1, 2)
+time.sleep(0.5)
+
+#print("Recorded processed:", robot.recorded_v())
+
+'''try:
+    while True:
+        robot.run()  # Replace this with your actual method
+except KeyboardInterrupt:
+    print("Execution stopped by user.")
+except Exception as e:
+    print(f"An error occurred: {e}")
+finally:
+    # Perform any cleanup actions here
+    print("Exiting the loop. Cleaning up...")
+    # Example cleanup: stop motors, save data, etc.
+    time.sleep(1)
+    print('final ang:', robot.motang())
+    robot.stop  # Stop the motor if applicable'''
 # Main loop
 #angle_y = robot.mpu.update_angle()
     
